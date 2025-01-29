@@ -7,12 +7,7 @@ import Data.List (intercalate)
 import Network.Curl
 
 split :: Char -> String -> [String]
-split c xs = words . map (\x -> if x == c
-                           then
-                             ' '
-                           else
-                             x
-                         ) $ xs
+split c xs = words . map (\x -> if x == c then ' ' else x) $ xs
 
 matcher :: String -> Tag String -> Bool
 matcher regex tag = and [tag ~== TagOpen "a" [],
@@ -20,9 +15,8 @@ matcher regex tag = and [tag ~== TagOpen "a" [],
 
 menu :: [(String, String)] -> String
 menu xs = unlines $ index 0 xs
-  where
-    index _ [] = []
-    index n (y:ys) = [(show n) ++ " - " ++ snd y] ++ index (succ n) ys
+  where index _ [] = []
+        index n (y:ys) = [(show n) ++ " - " ++ snd y] ++ index (succ n) ys
 
 filterTags :: [Tag String] -> [(String, String)]
 filterTags [] = []
@@ -31,29 +25,32 @@ filterTags (x:xs)
     [(head . split '&' . fromAttrib "href" $ x,
       fromTagText $ head fromLink)] ++ filterTags xs
   | otherwise = filterTags xs
-    where
-      fromLink = dropWhile (not . isTagText) xs
+    where fromLink = dropWhile (not . isTagText) xs
+
+openUrl :: String -> IO String
+openUrl url = snd <$> curlGetString url [CurlFollowLocation True]
 
 getBooksList :: [String] -> IO ()
 getBooksList [] = pure ()
 getBooksList args = do
-  src <- curlGetString (googleBooks ++ intercalate "+" args) [CurlFollowLocation True]
-  let bookList = foldl (\acc x -> if fst x `elem` (map fst acc) then
-                                    acc
-                                  else
-                                    x:acc
-                       ) [] $ filterTags $ parseTags $ snd src
-  putStr $ menu bookList
-  putStrLn "\nSelect a book: "
-  i <- getLine
-  getFormat $ fst $ bookList !! (read i :: Int)
+  src <- openUrl (googleBooks ++ intercalate "+" args)
+  let bookList = foldl (\acc x -> if fst x `elem` (map fst acc)
+                                  then acc
+                                  else x:acc) [] $ filterTags $ parseTags src
+  if null bookList then
+    getBooksList []
+  else do
+    putStr $ menu bookList
+    putStrLn "\nSelect a book: "
+    i <- getLine
+    getFormat $ fst $ bookList !! (read i :: Int)
 
 getFormat :: String -> IO ()
 getFormat url = do
-  src <- curlGetString url [CurlFollowLocation True]
-  let bibtexUrl = fromAttrib "href" . head . filter (matcher bookBibtexRegex) $ parseTags $ snd src
-  format <- curlGetString bibtexUrl [CurlFollowLocation True]
-  writeFile "refs.bib" (snd format)
+  src <- openUrl url
+  let bibtexUrl = fromAttrib "href" . head . filter (matcher bookBibtexRegex) $ parseTags src
+  format <- openUrl bibtexUrl
+  writeFile "refs.bib" format
   putStrLn "saved to \"refs.bib\"."
 
 main = getArgs >>= getBooksList
