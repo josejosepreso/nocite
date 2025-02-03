@@ -28,28 +28,26 @@ filterTags (x:xs)
     where fromLink = dropWhile (not . isTagText) xs
 
 openUrl :: String -> IO String
-openUrl url = snd <$> curlGetString url [CurlFollowLocation True]
+openUrl url = snd <$> curlGetString url [CurlFollowLocation True,
+                                         CurlProxy "124.6.155.170",
+                                         CurlProxyPort 3131]
 
-getBooksList :: [String] -> IO ()
 getBooksList [] = pure ()
 getBooksList args = do
   src <- openUrl (googleBooks ++ intercalate "+" args)
   let bookList = foldl (\acc x -> if fst x `elem` (map fst acc)
                                   then acc
                                   else x:acc) [] $ filterTags $ parseTags src
-  if null bookList then
-    getBooksList []
+  if null bookList then getBooksList []
   else do
     putStr $ menu bookList
     putStrLn "\nSelect a book: "
     i <- getLine
     getFormat $ fst $ bookList !! (read i :: Int)
 
-getFormat :: String -> IO ()
 getFormat url = do
   src <- openUrl url
-  let bibtexUrl = fromAttrib "href" . head . filter (matcher bookBibtexRegex) $ parseTags src
-  format <- openUrl bibtexUrl
+  format <- openUrl $ fromAttrib "href" . head . filter (matcher bookBibtexRegex) $ parseTags src
   writeFile "refs.bib" format
   putStrLn "saved to \"refs.bib\"."
 
